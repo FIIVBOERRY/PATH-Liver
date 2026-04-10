@@ -1,0 +1,8 @@
+*.pth
+*.ipynb
+__pycache__/
+data/processed/
+data/features/
+data/raw/
+assets/ckpts/
+docs/
