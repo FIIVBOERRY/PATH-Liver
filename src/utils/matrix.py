@@ -5,6 +5,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 
+# 设置matplotlib支持中文显示
+plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans', 'Arial Unicode MS', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+
 def calculate_metrics(y_true, y_pred, y_prob):
     """
     y_true: List or np.array

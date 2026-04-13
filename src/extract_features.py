@@ -66,65 +66,68 @@ def get_uni2_model():
     # pytorch_model.bin 是完整的 HF 格式，通常包含 state_dict
     print(f"Loading local weights from {MODEL_PATH}...")
     state_dict = torch.load(MODEL_PATH, map_location="cpu")
-    
-    # 自动处理可能嵌套的键名
-    if "model" in state_dict:
-        state_dict = state_dict["model"]
-    
-    # 载入模型
-    msg = model.load_state_dict(state_dict, strict=True)
-    print(f"Successfully loaded weights: {msg}")
-
+    model.load_state_dict(state_dict, strict=True)
     model.to(DEVICE)
     model.eval()
     return model
 
-class SimpleImageDataset(Dataset):
-    def __init__(self, img_paths, transform):
-        self.img_paths = img_paths
-        self.transform = transform
-    def __len__(self): return len(self.img_paths)
-    def __getitem__(self, idx):
-        path = self.img_paths[idx]
-        img = Image.open(path).convert('RGB')
-        return self.transform(img), path
+def process_subfolders():
+    if not os.path.exists(SAVE_DIR):
+        os.makedirs(SAVE_DIR)
 
-@torch.no_grad()
-def extract():
     model = get_uni2_model()
-    # UNI2 推荐的归一化 (根据其训练习惯)
-    preprocess = transforms.Compose([
+    
+    transform = transforms.Compose([
         transforms.Resize(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
     ])
 
-    categories = [d for d in os.listdir(IMG_DIR) if os.path.isdir(os.path.join(IMG_DIR, d))]
+    # 获取所有子文件夹（类别）
+    subfolders = [f for f in os.listdir(IMG_DIR) if os.path.isdir(os.path.join(IMG_DIR, f))]
     
-    for cat in categories:
-        cat_in_path = os.path.join(IMG_DIR, cat)
-        cat_out_path = os.path.join(SAVE_DIR, cat)
-        os.makedirs(cat_out_path, exist_ok=True)
+    for subfolder in subfolders:
+        save_path = os.path.join(SAVE_DIR, f"{subfolder}.hdf5")
         
-        img_paths = glob(os.path.join(cat_in_path, "*.png")) + glob(os.path.join(cat_in_path, "*.jpg"))
-        print(f"Processing {cat}: {len(img_paths)} images")
+        # 断点续传逻辑
+        if os.path.exists(save_path):
+            print(f"Skipping {subfolder}: HDF5 already exists.")
+            continue
 
-        # --- 优化点 1: 使用 DataLoader 开启多线程读取 ---
-        dataset = SimpleImageDataset(img_paths, preprocess)
-        # num_workers 设置为你的 CPU 核心数的一半左右（例如 4 或 8）
-        loader = DataLoader(dataset, batch_size=64, num_workers=8, pin_memory=True)
-        print(f"Processing {cat} with Batch Size {64}...")
+        print(f"\nProcessing class: {subfolder}")
+        subfolder_path = os.path.join(IMG_DIR, subfolder)
+        img_files = [os.path.join(subfolder_path, f) for f in os.listdir(subfolder_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        
+        if not img_files:
+            continue
 
-        for imgs, paths in tqdm(loader):
-            imgs = imgs.to(DEVICE)
+        dataset = PatchDataset(img_files, transform=transform)
+        dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=True)
+
+        all_features = []
+        all_coords = []
+
+        with torch.no_grad():
+            for imgs, filenames in tqdm(dataloader, desc=f"Extracting {subfolder}", unit="batch"):
+                imgs = imgs.to(DEVICE)
+                features = model(imgs) # [B, 1536]
+                
+                all_features.append(features.cpu().numpy())
+                all_coords.extend(filenames)
+
+        # 合并特征
+        all_features = np.concatenate(all_features, axis=0)
+        
+        # 写入 HDF5
+        with h5py.File(save_path, "w") as f:
+            f.create_dataset("features", data=all_features, compression="gzip")
+            # 处理不定长字符串存储
+            dt = h5py.special_dtype(vlen=str)
+            dset_coords = f.create_dataset("coords", (len(all_coords),), dtype=dt)
+            dset_coords[:] = all_coords
             
-            # --- 优化点 2: 批量特征提取 ---
-            feats = model(imgs) # 一次处理 64 张
-            
-            # 保存结果
-            for i in range(len(paths)):
-                save_p = os.path.join(cat_out_path, os.path.basename(paths[i]).split('.')[0] + ".pt")
-                torch.save(feats[i].cpu(), save_p)
+        print(f"Saved: {save_path} (Total: {len(all_coords)})")
 
 if __name__ == "__main__":
-    extract()
+    process_subfolders()
+    print("\nAll tasks completed.")

@@ -3,9 +3,11 @@ from src.dataset import get_dataloaders
 from src.model import MLPClassifier
 from src.utils.matrix import calculate_metrics, plot_confusion_matrix
 
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 def test():
-    _, _, test_loader, class_to_idx = get_dataloaders("data/features")
-    model = MLPClassifier(num_classes=len(class_to_idx)).cuda()
+    _, _, test_loader, class_to_idx = get_dataloaders("data/features","docs/mapping.xlsx")
+    model = MLPClassifier(num_classes=len(class_to_idx)).to(DEVICE)
     model.load_state_dict(torch.load("checkpoints/best_model.pth"))
     
     model.eval()
@@ -19,7 +21,7 @@ def test():
             preds = torch.argmax(logits, dim=1)
             
             all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(labels.numpy())
+            all_labels.extend(labels.cpu().numpy())
             all_probs.extend(probs.cpu().numpy())
             
     metrics = calculate_metrics(all_labels, all_preds, all_probs)
@@ -28,7 +30,7 @@ def test():
         print(f"{k.upper()}: {v:.4f}")
 
     # 获取类别名称（确保顺序与训练时一致）
-    _, _, _, class_to_idx = get_dataloaders("data/features")
+    _, _, _, class_to_idx = get_dataloaders("data/features","docs/mapping.xlsx")
     # 将字典转为按索引排序的列表: ['Glandular_Microacinar', 'NormalFibrous', 'NormalLiver']
     class_names = [k for k, v in sorted(class_to_idx.items(), key=lambda item: item[1])]
     
