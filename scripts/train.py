@@ -8,12 +8,23 @@ from src.utils.matrix import calculate_metrics
 # 超参
 EPOCHS = 20
 LR = 1e-3
+NUM_WORKERS = 4
+PIN_MEMORY = True
+BATCH_SIZE = 128
 FEATURE_DIR = "data/features"
-MAPPING_PATH = "docs/mapping.xlsx"
+MAPPING_PATH = "docs/mapping_coarse.xlsx"
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+torch.backends.cudnn.benchmark = True
+
 def train():
-    train_loader, val_loader, _, class_to_idx = get_dataloaders(FEATURE_DIR, MAPPING_PATH)
+    train_loader, val_loader, _, class_to_idx = get_dataloaders(
+        FEATURE_DIR,
+        MAPPING_PATH,
+        batch_size=BATCH_SIZE,
+        num_workers=NUM_WORKERS,
+        pin_memory=PIN_MEMORY,
+    )
     model = MLPClassifier(num_classes=len(class_to_idx)).to(DEVICE)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
