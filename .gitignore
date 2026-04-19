@@ -6,3 +6,5 @@ data/features/
 data/raw/
 assets/ckpts/
 docs/
+*.png
+*.jpg

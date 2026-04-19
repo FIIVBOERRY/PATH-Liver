@@ -17,8 +17,8 @@ plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans', 'Arial Unicode MS', 
 plt.rcParams['axes.unicode_minus'] = False
 
 # --- 配置区 ---
-SVS_PATH = "data/raw/C0070/C0070.svs"
-XML_PATH = "data/vis/C0070/C0070.xml"
+SVS_PATH = "data/raw/C0069/C0069.svs"
+XML_PATH = "data/vis/C0069/C0069.xml"
 UNI2_CKPT = "assets/ckpts/uni2-h/pytorch_model.bin"
 MODEL_CKPT = "checkpoints/best_model.pth"
 PATCH_SIZE = 224
@@ -134,7 +134,7 @@ def run_visualization():
         draw.text((40, 10 + i*30), info["name"], fill=(255,255,255), font=font)
     
     # 保存结果
-    save_path = "data/vis/C0070/C0070_visualization.png"
+    save_path = "data/vis/C0069/C0069_visualization.png"
     res_pil.save(save_path)
     print(f"Visualization saved to: {save_path}")
 
@@ -143,7 +143,7 @@ def run_svs2png():
     w0, h0 = slide.dimensions
     vis_level = 2
     thumb = slide.get_thumbnail(slide.level_dimensions[vis_level])
-    save_path = "data/vis/C0070/C0070_thumbnail.png"
+    save_path = "data/vis/C0069/C0069_thumbnail.png"
     thumb.save(save_path)
     print(f"Thumbnail saved to: {save_path}")
 

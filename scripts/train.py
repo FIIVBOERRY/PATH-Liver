@@ -1,71 +1,106 @@
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from tqdm import tqdm
-from src.dataset import get_dataloaders
-from src.model import MLPClassifier
-from src.utils.matrix import calculate_metrics
+import wandb
+import os
+import argparse
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score, confusion_matrix
+import numpy as np
 
-# 超参
-EPOCHS = 20
-LR = 1e-3
-NUM_WORKERS = 4
-PIN_MEMORY = True
-BATCH_SIZE = 128
-FEATURE_DIR = "data/features"
-MAPPING_PATH = "docs/mapping_coarse.xlsx"
-DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-torch.backends.cudnn.benchmark = True
+# 导入自定义模块
+from src.model import MLPClassifier as MLP
+from src.dataset import get_dataloader
 
 def train():
-    train_loader, val_loader, _, class_to_idx = get_dataloaders(
-        FEATURE_DIR,
-        MAPPING_PATH,
-        batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS,
-        pin_memory=PIN_MEMORY,
-    )
-    model = MLPClassifier(num_classes=len(class_to_idx)).to(DEVICE)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-    
-    best_val_f1 = 0
-    print(f"使用设备: {DEVICE}")
+    # 初始化 WandB
+    wandb.init(project="pathology_patch_classification", name=f"{args.task}_{args.name}", config=args)
 
-    for epoch in range(EPOCHS):
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    # 加载数据
+    train_loader, num_classes = get_dataloader('train', 'data/split/train.txt', 'data/features', 'data/mapping.xlsx', args.task, args.batch_size, args.downsample)
+    val_loader, _ = get_dataloader('val', 'data/split/val.txt', 'data/features', 'data/mapping.xlsx', args.task, args.batch_size)
+
+    # 初始化模型 (假设输入维度1536)
+    model = MLP(input_dim=1536, num_classes=num_classes).to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+
+    best_acc = 0
+
+    for epoch in range(args.epochs):
         model.train()
-        for feats, labels in tqdm(train_loader, desc=f"Epoch {epoch}/{EPOCHS}"):
-            feats, labels = feats.to(DEVICE), labels.to(DEVICE)
-            logits = model(feats)
-            loss = criterion(logits, labels)
-            
+        train_loss = 0
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")
+        
+        for feats, labels in pbar:
+            feats, labels = feats.to(device), labels.to(device)
             optimizer.zero_grad()
+            outputs = model(feats)
+            loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
+            train_loss += loss.item()
+            pbar.set_postfix(loss=loss.item())
+
+        #每10个epoch保存一次模型，包括最后一个epoch
+        if (epoch + 1) % 10 == 0:
+            torch.save(model.state_dict(), f"checkpoints/epoch_{epoch+1}_{args.task}_model.pth")
+        elif (epoch + 1) == args.epochs:
+            torch.save(model.state_dict(), f"checkpoints/epoch_{epoch+1}_{args.task}_model.pth")
 
         # 验证
-        val_metrics = evaluate(model, val_loader)
-        print(f"Epoch {epoch}: Val Acc {val_metrics['acc']:.4f}, F1 {val_metrics['f1']:.4f}")
+        val_metrics = evaluate(model, val_loader, device, num_classes)
+        print(f"Epoch {epoch+1} Val Acc: {val_metrics['acc']:.4f}")
         
-        if val_metrics['f1'] > best_val_f1:
-            best_val_f1 = val_metrics['f1']
-            torch.save(model.state_dict(), "checkpoints/best_model.pth")
+        wandb.log({"train_loss": train_loss/len(train_loader), **val_metrics})
 
-def evaluate(model, loader):
+        if val_metrics['acc'] > best_acc:
+            best_acc = val_metrics['acc']
+            torch.save(model.state_dict(), f"checkpoints/best_{args.task}_model.pth")
+
+def evaluate(model, loader, device, num_classes):
     model.eval()
-    all_preds, all_labels, all_probs = [], [], []
+    all_preds = []
+    all_labels = []
+    all_probs = []
+
     with torch.no_grad():
-        for feats, labels in tqdm(loader, desc="Evaluating"):
-            feats = feats.to(DEVICE)
-            logits = model(feats)
-            probs = torch.softmax(logits, dim=1)
-            preds = torch.argmax(logits, dim=1)
+        for feats, labels in loader:
+            feats, labels = feats.to(device), labels.to(device)
+            outputs = model(feats)
+            probs = torch.softmax(outputs, dim=1)
+            preds = torch.argmax(outputs, dim=1)
             
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
             all_probs.extend(probs.cpu().numpy())
-            
-    return calculate_metrics(all_labels, all_preds, all_probs)
+
+    # 计算指标
+    acc = accuracy_score(all_labels, all_preds)
+    p, r, f1, _ = precision_recall_fscore_support(all_labels, all_preds, average='macro')
+    
+    # AUC 处理多分类
+    try:
+        auc = roc_auc_score(all_labels, all_probs, multi_class='ovr')
+    except:
+        auc = 0.0
+
+    # 混淆矩阵传给 WandB
+    cm = confusion_matrix(all_labels, all_preds)
+    wandb.log({"conf_mat": wandb.plot.confusion_matrix(probs=None, y_true=all_labels, preds=all_preds)})
+
+    return {'acc': acc, 'precision': p, 'recall': r, 'f1': f1, 'auc': auc}
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--task', type=str, default='coarse', choices=['fine', 'coarse'])
+    parser.add_argument('--name', type=str, default='jida_classification_coarse')
+    parser.add_argument('--downsample', type=float, default=0.0)
+    parser.add_argument('--batch_size', type=int, default=1024)
+    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--lr', type=float, default=1e-4)
+    args = parser.parse_args()
+    os.makedirs("checkpoints", exist_ok=True)
     train()
