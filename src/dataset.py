@@ -6,7 +6,7 @@ import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 
 class PatchFeatureDataset(Dataset):
-    def __init__(self, mode, split_path, feature_dir, mapping_path, task_type='fine', downsample_ratio=0.7):
+    def __init__(self, mode, split_path, feature_dir, mapping_path, task_type='fine', downsample_ratio=0.0):
         """
         task_type: 'fine' 或 'coarse'
         """

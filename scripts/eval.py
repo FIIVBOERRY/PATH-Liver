@@ -40,18 +40,18 @@ def test(args):
     cm = confusion_matrix(all_labels, all_preds)
     cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
     plt.figure(figsize=(10, 8))
-    sns.heatmap(cm_normalized, annot=True, fmt='.2%', cmap='Blues')
+    sns.heatmap(cm_normalized, annot=True, fmt='.1%', cmap='Blues')
     plt.xlabel('Predicted')
     plt.ylabel('True')
     plt.title(f'Confusion Matrix - {args.task}')
-    plt.savefig(f'results/cm_{args.task}_bst.png')
+    plt.savefig(f'results/cm_{args.task}_80.png')
     print(f"混淆矩阵已保存至 results/cm_{args.task}.png")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task', type=str, default='coarse', choices=['fine', 'coarse'])
+    parser.add_argument('--task', type=str, default='fine', choices=['fine', 'coarse'])
     #parser.add_argument('--model_path', type=str, default='checkpoints/best_coarse_model.pth')
-    parser.add_argument('--model_path', type=str, default='checkpoints/best_coarse_model.pth')
+    parser.add_argument('--model_path', type=str, default='checkpoints/fine/epoch_80_fine_model.pth')
     args = parser.parse_args()
     os.makedirs("results", exist_ok=True)
     test(args)
