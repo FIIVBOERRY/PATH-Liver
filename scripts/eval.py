@@ -4,20 +4,16 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report, confusion_matrix
-from model import MLP
-from dataset import get_dataloader
+from src.model import MLPClassifier as MLP
+from src.dataset import get_dataloader
 from tqdm import tqdm
+import os
 
-def test():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--task', type=str, required=True)
-    parser.add_argument('--model_path', type=str, required=True)
-    args = parser.parse_args()
-
+def test(args):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     
     # 1. 加载数据
-    test_loader, num_classes = get_dataloader('test', 'data/split/test.txt', 'data/features', 'data/mapping.xlsx', args.task, 1024)
+    test_loader, num_classes = get_dataloader('test', '/root/autodl-tmp/data/split/test.txt', '/root/autodl-tmp/data/features', '/root/autodl-tmp/data/mapping.xlsx', args.task, 1024)
 
     # 2. 加载模型
     model = MLP(input_dim=1536, num_classes=num_classes).to(device)
@@ -42,18 +38,20 @@ def test():
 
     # 5. 绘制混淆矩阵图
     cm = confusion_matrix(all_labels, all_preds)
+    cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
     plt.figure(figsize=(10, 8))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    sns.heatmap(cm_normalized, annot=True, fmt='.2%', cmap='Blues')
     plt.xlabel('Predicted')
     plt.ylabel('True')
     plt.title(f'Confusion Matrix - {args.task}')
-    plt.savefig(f'results/cm_{args.task}.png')
+    plt.savefig(f'results/cm_{args.task}_bst.png')
     print(f"混淆矩阵已保存至 results/cm_{args.task}.png")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task', type=str, required=True)
-    parser.add_argument('--model_path', type=str, required=True)
+    parser.add_argument('--task', type=str, default='coarse', choices=['fine', 'coarse'])
+    #parser.add_argument('--model_path', type=str, default='checkpoints/best_coarse_model.pth')
+    parser.add_argument('--model_path', type=str, default='checkpoints/best_coarse_model.pth')
     args = parser.parse_args()
     os.makedirs("results", exist_ok=True)
-    test()
+    test(args)

@@ -6,7 +6,7 @@ import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 
 class PatchFeatureDataset(Dataset):
-    def __init__(self, mode, split_path, feature_dir, mapping_path, task_type='fine', downsample_ratio=0.0):
+    def __init__(self, mode, split_path, feature_dir, mapping_path, task_type='fine', downsample_ratio=0.7):
         """
         task_type: 'fine' 或 'coarse'
         """
@@ -61,6 +61,9 @@ class PatchFeatureDataset(Dataset):
         print(f"{mode} 数据加载完成: {len(self.labels)} patches.")
 
     def _downsample(self, downsample_ratio):
+        # 固定全局随机种子
+        seed = 42
+        np.random.seed(seed)
         unique_labels, counts = np.unique(self.labels, return_counts=True)
         min_count = np.min(counts)
         
